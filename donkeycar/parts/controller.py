@@ -83,6 +83,13 @@ class Joystick(object):
 
         return True
 
+    def reconnect(self):
+        # logging.info("Trying to reopen %s..." % self.dev_fn)
+        try:
+            self.jsdev = open(self.dev_fn, 'rb')
+            print("dev :", self.jsdev)
+        except:
+            self.jsdev = None
 
     def show_map(self):
         '''
@@ -108,7 +115,12 @@ class Joystick(object):
             return button, button_state, axis, axis_val
 
         # Main event loop
-        evbuf = self.jsdev.read(8)
+        try:
+            evbuf = self.jsdev.read(8)
+        except OSError:
+            print("Lost Joystick")
+            self.jsdev = None
+            return None, -999, None, None
 
         if evbuf:
             tval, value, typev, number = struct.unpack('IhBB', evbuf)
@@ -223,7 +235,7 @@ class PyGameJoystick(object):
                 iBtn += 1
 
         return button, button_state, axis, axis_val
-        
+
     def set_deadzone(self, val):
         self.dead_zone = val
 
@@ -393,7 +405,7 @@ class PS3JoystickOld(Joystick):
             0x121 : 'L3',
             0x122 : 'R3',
 
-            0x12c : "triangle", 
+            0x12c : "triangle",
             0x12d : "circle",
             0x12e : "cross",
             0x12f : 'square',
@@ -618,14 +630,14 @@ class XboxOneJoystick(Joystick):
         super(XboxOneJoystick, self).__init__(*args, **kwargs)
 
         self.axis_names = {
-            0x00 : 'left_stick_horz',
-            0x01 : 'left_stick_vert',
-            0x05 : 'right_stick_vert',
-            0x02 : 'right_stick_horz',
-            0x0a : 'left_trigger',
-            0x09 : 'right_trigger',
-            0x10 : 'dpad_horiz',
-            0x11 : 'dpad_vert'
+            0x00: 'left_stick_horz',
+            0x01: 'left_stick_vert',
+            0x02: 'right_stick_horz',
+            0x03: 'right_stick_vert',
+            0x09: 'right_trigger',
+            0x0a: 'left_trigger',
+            0x10: 'dpad_horz',
+            0x11: 'dpad_vert',
         }
 
         self.button_names = {
@@ -922,6 +934,16 @@ class JoystickController(object):
             time.sleep(3)
 
         while self.running:
+
+            # vg ... reconnection
+            if self.js.jsdev is None:
+                self.js.reconnect()
+                if self.js.jsdev is None:
+                    print("Joystick still missing")
+                    time.sleep(1)
+                else:
+                    print("Got joystick (back): ", self.js)
+
             button, button_state, axis, axis_val = self.js.poll()
 
             if axis is not None and axis in self.axis_trigger_map:
