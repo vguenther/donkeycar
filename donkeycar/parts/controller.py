@@ -24,10 +24,25 @@ class Joystick(object):
         self.axis_map = []
         self.button_map = []
         self.jsdev = None
+        self.js_name = None
         self.dev_fn = dev_fn
+        self.reconnection_attempt_counter = 0
 
 
     def init(self):
+        if not os.path.exists(self.dev_fn):
+            print(self.dev_fn, "is missing")
+            return False
+        '''
+        call once to setup connection to device and map buttons
+        '''
+        # Open the joystick device.
+        print('Opening %s...' % self.dev_fn)
+        self.jsdev = open(self.dev_fn, 'rb')
+        self.js_name = "none"
+        self.get_info_from_device()
+
+    def get_info_from_device(self):
         try:
             from fcntl import ioctl
         except ModuleNotFoundError:
@@ -35,18 +50,6 @@ class Joystick(object):
             self.num_buttons = 0
             print("no support for fnctl module. joystick not enabled.")
             return False
-
-        if not os.path.exists(self.dev_fn):
-            print(self.dev_fn, "is missing")
-            return False
-
-        '''
-        call once to setup connection to device and map buttons
-        '''
-        # Open the joystick device.
-        print('Opening %s...' % self.dev_fn)
-        self.jsdev = open(self.dev_fn, 'rb')
-
         # Get the device name.
         buf = array.array('B', [0] * 64)
         ioctl(self.jsdev, 0x80006a13 + (0x10000 * len(buf)), buf) # JSIOCGNAME(len)
@@ -79,17 +82,21 @@ class Joystick(object):
             btn_name = self.button_names.get(btn, 'unknown(0x%03x)' % btn)
             self.button_map.append(btn_name)
             self.button_states[btn_name] = 0
-            #print('btn', '0x%03x' % btn, 'name', btn_name)
 
         return True
 
     def reconnect(self):
         # logging.info("Trying to reopen %s..." % self.dev_fn)
         try:
+            self.reconnection_attempt_counter += 1
             self.jsdev = open(self.dev_fn, 'rb')
-            print("dev :", self.jsdev)
+            print("Reconnected Device :", self.jsdev)
         except:
             self.jsdev = None
+            return False
+        self.get_info_from_device()
+        self.reconnection_attempt_counter = 0
+        return True
 
     def show_map(self):
         '''
@@ -138,7 +145,11 @@ class Joystick(object):
                     logging.info("button: %s state: %d" % (button, value))
 
             if typev & 0x02:
-                axis = self.axis_map[number]
+                try:
+                    axis = self.axis_map[number]
+                except IndexError:
+                    logging.info("index error number: %d" % number)
+                    raise
                 if axis:
                     fvalue = value / 32767.0
                     self.axis_states[axis] = fvalue
@@ -633,7 +644,7 @@ class XboxOneJoystick(Joystick):
             0x00: 'left_stick_horz',
             0x01: 'left_stick_vert',
             0x02: 'right_stick_horz',
-            0x03: 'right_stick_vert',
+            0x05: 'right_stick_vert',      # seems the better choice for me
             0x09: 'right_trigger',
             0x0a: 'left_trigger',
             0x10: 'dpad_horz',
@@ -939,8 +950,10 @@ class JoystickController(object):
             if self.js.jsdev is None:
                 self.js.reconnect()
                 if self.js.jsdev is None:
-                    print("Joystick still missing")
-                    time.sleep(1)
+                    if self.js.reconnection_attempt_counter%10 == 0:
+                        print("Joystick still missing")
+                    os.system("sudo bluetoothctl connect 5C:BA:37:6D:A4:B6")
+                    time.sleep(2)
                 else:
                     print("Got joystick (back): ", self.js)
 
